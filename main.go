@@ -49,7 +49,7 @@ type FeedRegistry struct {
 
 type configFile struct {
 	Feeds []FeedRegistry
-	port  string
+	Port  string
 }
 
 type token struct {
@@ -58,13 +58,12 @@ type token struct {
 
 /******************* global variables */
 var config = configFile{}
-var feeds = []FeedRegistry{}
 
 /******************* logger init */
 var log = logging.MustGetLogger("authentication")
 
 var format = logging.MustStringFormatter(
-	`%{color}%{time:15:04:05.000} %{shortfunc}|%{shortfile} : %{level:.4s} %{id:03x}%{color:reset} %{message}`,
+	`%{color}%{time:15:04:05.000} %{shortfunc}|%{shortfile} : %{level:.6s} %{id:03x}%{color:reset} %{message}`,
 )
 
 func main() {
@@ -149,16 +148,16 @@ func updateFeed() {
 	Output: none
 */
 func catchFeeds() {
-	log.Notice("Routine Background Task: Catching Feeds")
+	log.Info("Routine Background Task: Catching Feeds")
 	parser := gofeed.NewParser()
-	for i := 0; i < len(feeds); i++ {
-		cont, err := parser.ParseURL(feeds[i].URL)
+	for i := 0; i < len(config.Feeds); i++ {
+		cont, err := parser.ParseURL(config.Feeds[i].URL)
 		if err != nil {
 
 			log.Error("Connection could not be established. Parser returned error:", err)
 			time.Sleep(20 * time.Second)
 			log.Info("Trying alternative")
-			httpresponse, err := http.Get(feeds[i].URL)
+			httpresponse, err := http.Get(config.Feeds[i].URL)
 			if err != nil {
 				log.Error("Connection could not be established again. Parser returned error:", err)
 			}
@@ -169,7 +168,7 @@ func catchFeeds() {
 			if err != nil {
 				log.Error("Connection could not be established again. Parser returned error:", err)
 			} else {
-				f, _ := os.Create(feeds[i].Name)
+				f, _ := os.Create(config.Feeds[i].Name)
 				js, _ := json.Marshal(cont)
 				res := &Feed{}
 				json.Unmarshal([]byte(js), res)
@@ -179,7 +178,7 @@ func catchFeeds() {
 
 			}
 		} else {
-			f, _ := os.Create(feeds[i].Name)
+			f, _ := os.Create(config.Feeds[i].Name)
 			js, _ := json.Marshal(cont)
 			res := &Feed{}
 			json.Unmarshal([]byte(js), res)
@@ -206,7 +205,7 @@ func getFeeds(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("403 - Forbidden"))
 		return
 	}
-	js, err := json.Marshal(feeds)
+	js, err := json.Marshal(config.Feeds)
 	if err != nil {
 		log.Notice("Marshaling failed:", err)
 	}
@@ -235,7 +234,7 @@ func getFeeds(w http.ResponseWriter, r *http.Request) {
 // 		Name: "test",
 // 		URL:  res.URL,
 // 	}
-// 	js, _ := json.Marshal(feed)
+// 	js, _ := json.Marshal(feed) defEntries
 // 	f.Write(js)
 // 	defer f.Close()
 // }
@@ -251,13 +250,10 @@ func verifyFeeds() {
 		log.Notice("No Config found")
 		log.Notice("Initilizating Feed List")
 		os.MkdirAll("config", 0722)
-
 		f, err := os.Create("config/feeds.yml")
-
 		if err != nil {
 			log.Error("Creating file found:", err)
 		}
-
 		defEntries := []FeedRegistry{
 			FeedRegistry{
 				Name: "SpaceFlightNow",
@@ -280,19 +276,25 @@ func verifyFeeds() {
 				URL:  "http://rss.nytimes.com/services/xml/rss/nyt/World.xml",
 			},
 		}
-
-		yml, _ := yaml.Marshal(defEntries)
-		feeds = defEntries
+		config.Feeds = defEntries
+		config.Port = ":8000"
+		yml, err := yaml.Marshal(defEntries)
+		if err != nil {
+			log.Error("Marshaling failed:", err)
+		}
 		f.Write(yml)
 		defer f.Close()
+
 	} else {
 		log.Notice("Using existing config")
 		f, err := ioutil.ReadFile("config/feeds.yml")
 		if err != nil {
 			log.Error("Reading in failed:", err)
 		}
-		yaml.Unmarshal(f, &feeds)
-
+		err = yaml.Unmarshal([]byte(f), &config.Feeds)
+		if err != nil {
+			log.Error("Interpreting config failed: ", err)
+		}
 	}
 
 }
